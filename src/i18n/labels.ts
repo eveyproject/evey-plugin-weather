@@ -65,6 +65,10 @@ export const LABELS: LabelDict = {
   set_save:    { en: "Save", fr: "Enregistrer", es: "Guardar", de: "Speichern" },
   set_saved:   { en: "Weather settings saved", fr: "Réglages météo enregistrés", es: "Ajustes del clima guardados", de: "Wetter-Einstellungen gespeichert" },
   set_error:   { en: "Couldn't save", fr: "Enregistrement impossible", es: "No se pudo guardar", de: "Speichern fehlgeschlagen" },
+
+  // Admin panel (admin.plugin.config slot): the server's default city.
+  adm_title: { en: "Server default city", fr: "Ville par défaut du serveur", es: "Ciudad predeterminada del servidor", de: "Standardstadt des Servers" },
+  adm_desc:  { en: "The city and temperature unit used when a profile has not chosen its own.", fr: "La ville et l'unité de température utilisées quand un profil n'a pas choisi les siennes.", es: "La ciudad y la unidad de temperatura que se usan cuando un perfil no ha elegido las suyas.", de: "Stadt und Temperatureinheit, die gelten, wenn ein Profil keine eigenen gewählt hat." },
 };
 
 export function translate(key: string, locale: string | undefined): string {

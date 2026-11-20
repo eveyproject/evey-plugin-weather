@@ -6,7 +6,31 @@ An [Evey](https://github.com/eveyproject/evey) plugin: the weather where you liv
 
 - `network`, limited to `api.open-meteo.com`, `geocoding-api.open-meteo.com` (forecast and city search) and `sdo.gsfc.nasa.gov` (the day's image of the sun).
 - `prefs`: each profile's city and units.
-- Slots: `home.section` (the widget) and `settings.user.appearance` (the city picker).
+- Slots: `home.section` (the widget), `settings.user.appearance` (each profile's city picker) and `admin.plugin.config` (the server's default city, same picker).
+- Evey 0.1.10 or later (`min_evey_version`), the first version that knows the `admin.plugin.config` slot.
+
+## Configuration
+
+Every profile picks its own city in **Settings > Appearance**. A profile that
+has not picked one uses the server's default city, which an admin sets on the
+plugin's card in **Admin > Plugins**. Both places show the same picker: type a
+name, then choose the right place in the list, which gives each match with its
+region and country ("Brest, Bretagne, France" and not "Brest, Brest Region,
+Belarus"). The picked place is stored with its coordinates, and the widget uses
+them as they are. Only a bare name, saved while the search could not answer, is
+geocoded by the widget, which then takes Open-Meteo's first match.
+
+| Key     | Type   | Stored by                                  |
+|---------|--------|--------------------------------------------|
+| `city`  | string | the picker (required, defaults to Paris)   |
+| `lat`   | number | the picker, empty for a bare name          |
+| `lon`   | number | the picker, empty for a bare name          |
+| `units` | select | `celsius` (default) or `fahrenheit`        |
+
+The profile's choice lives in the plugin's per-profile prefs (`residence.city`,
+`residence.lat`, `residence.lon`, `residence.units`) and wins over the server
+default. The admin panel writes the server config through
+`evey.config.save`, which Evey checks against `config_schema`.
 
 ## Architecture (DDD, dependencies point inward)
 
@@ -15,8 +39,12 @@ src/
   domain/            pure TS, zero deps, fully unit-tested
     model/           weather.ts (snapshot, sun times), scene.ts (params, palette)
     services/        conditionToScene (WMO table), dayCycle (real solar events),
-                     paletteMixer (time-of-day x mood), moonPhase
+                     paletteMixer (time-of-day x mood), moonPhase,
+                     location (profile pick over server default)
     ports/           WeatherProvider, HostBridge, SceneRenderer
+  settings/          the city picker (SettingsApp) and its two stores:
+                     a profile's prefs, or the server config
+  admin/             entry of the admin.plugin.config bundle
   application/       WeatherApp: orchestration, refresh (15 min) + day-cycle
                      tick (5 s, live sun/moon motion without any page reload),
                      bounded retries, lifecycle/dispose
@@ -87,6 +115,7 @@ MIT, see [LICENSE](LICENSE).
 
 ## Version history
 
+- **1.1.0** - the server's default city is set in the admin with the same picker as a profile's city, and stored with its coordinates (`lat`, `lon`), so a profile that has not chosen its own city no longer gets the wrong homonym. Needs Evey 0.1.10.
 - **1.0.0** - first release out of the Evey repository, under the name `weather` and signed with the Evey project key. It carries everything below.
 
 Before 1.0.0 the plugin lived in the Evey repository as `weather-v2`:

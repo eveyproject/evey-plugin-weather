@@ -7,8 +7,9 @@ display_name:
   hi: मौसम
   zh: 天气
 kind: plugin
-version: 1.0.0
-description: "The weather where you live, on your home screen, behind a sky that matches it - sun, clouds, rain, snow, and the moon in its real phase tonight. Pick your city and your units in the settings."
+version: 1.1.0
+min_evey_version: "0.1.10"
+description: "The weather where you live, on your home screen, behind a sky that matches it - sun, clouds, rain, snow, and the moon in its real phase tonight. Pick your city and your units in the settings; the admin sets the server default the same way."
 author: Evey project
 language: nodejs
 entrypoint: node main.js
@@ -25,13 +26,27 @@ frontend:
     src: dist/index.js
   - slot: settings.user.appearance
     src: dist/settings.js
+  - slot: admin.plugin.config
+    src: dist/admin.js
 config_schema:
   city:
     type: string
     label: City
     required: true
     default: Paris
-    description: City name (resolved via Open-Meteo geocoding)
+    description: Default city for profiles that have not chosen their own
+  lat:
+    type: number
+    label: Latitude
+    min: -90
+    max: 90
+    description: Latitude of the default city, set by the city picker
+  lon:
+    type: number
+    label: Longitude
+    min: -180
+    max: 180
+    description: Longitude of the default city, set by the city picker
   units:
     type: select
     label: Temperature units

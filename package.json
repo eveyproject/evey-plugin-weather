@@ -1,9 +1,9 @@
 {
   "name": "evey-plugin-weather",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --format=iife --target=es2019 --minify --outfile=dist/index.js --loader:.jpg=dataurl && esbuild src/settings/index.ts --bundle --format=iife --target=es2019 --minify --outfile=dist/settings.js && cp src/assets/sun_aia171.jpg dist/sun-live-aia171.jpg",
+    "build": "esbuild src/index.ts --bundle --format=iife --target=es2019 --minify --outfile=dist/index.js --loader:.jpg=dataurl && esbuild src/settings/index.ts --bundle --format=iife --target=es2019 --minify --outfile=dist/settings.js && esbuild src/admin/index.ts --bundle --format=iife --target=es2019 --minify --outfile=dist/admin.js && cp src/assets/sun_aia171.jpg dist/sun-live-aia171.jpg",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

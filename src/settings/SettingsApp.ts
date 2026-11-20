@@ -1,9 +1,9 @@
-// Settings panel rendered in the host's `settings.user.appearance` slot (the
-// user's profile → Appearance). Lets each user set, PER ACTIVE PROFILE, the
-// home city + temperature unit the weather widget uses. Values are stored in
-// the plugin's OWN per-profile preference store via the host bridge
-// (window.evey.prefs) - nothing leaves the plugin's namespace, and the widget
-// reads the same prefs. Zero runtime deps: vanilla DOM.
+// City + temperature unit panel. The same panel runs in two slots, and only
+// its store and its title/description differ:
+//   - settings.user.appearance: a profile's own place, in per-profile prefs;
+//   - admin.plugin.config: the server's default place, in the plugin config,
+//     used by every profile that has not chosen its own.
+// See ResidenceStore. Zero runtime deps: vanilla DOM.
 //
 // The city input is DISAMBIGUATED: as the user types we geocode and show the
 // matching places with their region + country ("Brest, Bretagne, France" vs
@@ -14,12 +14,18 @@
 import type { HostBridge, HostInit } from "../domain/ports/HostBridge";
 import type { WeatherProvider } from "../domain/ports/WeatherProvider";
 import type { GeoCandidate, Units } from "../domain/model/weather";
+import { preselect, type Residence } from "../domain/services/location";
 import { translate } from "../i18n/labels";
+import type { ResidenceStore } from "./ResidenceStore";
 
-export const CITY_KEY = "residence.city";
-export const UNITS_KEY = "residence.units";
-export const LAT_KEY = "residence.lat";
-export const LON_KEY = "residence.lon";
+// i18n keys of the panel heading, the only text that differs between slots.
+export interface PanelCopy {
+  title: string;
+  desc: string;
+}
+
+export const PROFILE_COPY: PanelCopy = { title: "set_title", desc: "set_desc" };
+export const SERVER_COPY: PanelCopy = { title: "adm_title", desc: "adm_desc" };
 
 const SEARCH_DEBOUNCE_MS = 400;
 
@@ -38,7 +44,12 @@ export class SettingsApp {
   private statusEl: HTMLParagraphElement | null = null;
   private unitsEl: HTMLSelectElement | null = null;
 
-  constructor(private bridge: HostBridge, private provider: WeatherProvider) {}
+  constructor(
+    private bridge: HostBridge,
+    private provider: WeatherProvider,
+    private store: ResidenceStore,
+    private copy: PanelCopy = PROFILE_COPY,
+  ) {}
 
   start(): void {
     this.bridge.onReady((init) => void this.boot(init));
@@ -56,16 +67,11 @@ export class SettingsApp {
     document.body.style.margin = "0";
     document.body.style.background = "transparent";
 
-    // Current values: the user's own pref wins over the admin config default.
-    const [c, u] = await Promise.all([
-      this.bridge.getPref(CITY_KEY),
-      this.bridge.getPref(UNITS_KEY),
-    ]);
-    const city = (c && c.trim()) || init.city;
-    const units: Units = u === "fahrenheit" ? "fahrenheit" : "celsius";
-    this.render(init.theme !== "light", city, units);
-    // Pre-populate the picker with the saved city so the current choice shows.
-    if (city.trim()) void this.runSearch(city.trim());
+    const current = await this.store.load(init);
+    this.render(init.theme !== "light", current.city, current.units);
+    // Pre-populate the picker with the saved city so the current choice shows,
+    // still selected when it was picked by its coordinates.
+    if (current.city.trim()) void this.runSearch(current.city.trim(), current);
   }
 
   private render(dark: boolean, city: string, units: Units): void {
@@ -101,8 +107,8 @@ export class SettingsApp {
     const root = document.createElement("div");
     root.className = "wxs";
     root.innerHTML = `
-      <h3><span aria-hidden="true">🌤️</span>${esc(this.t("set_title"))}</h3>
-      <p>${esc(this.t("set_desc"))}</p>
+      <h3><span aria-hidden="true">🌤️</span>${esc(this.t(this.copy.title))}</h3>
+      <p>${esc(this.t(this.copy.desc))}</p>
       <div class="row">
         <label for="wxs-city">${esc(this.t("set_city"))}</label>
         <input id="wxs-city" type="text" autocomplete="off" placeholder="${esc(this.t("set_city_ph"))}">
@@ -150,20 +156,25 @@ export class SettingsApp {
     this.searchTimer = window.setTimeout(() => void this.runSearch(value), SEARCH_DEBOUNCE_MS);
   }
 
-  private async runSearch(value: string): Promise<void> {
+  private async runSearch(value: string, current?: Residence): Promise<void> {
     const seq = ++this.searchSeq;
     this.setStatus(this.t("set_searching"));
+    let results: GeoCandidate[] = [];
     try {
-      const results = await this.provider.geocodeSearch(value, this.locale);
-      if (seq !== this.searchSeq) return; // a newer search superseded this one
-      this.setCandidates(results);
+      results = await this.provider.geocodeSearch(value, this.locale);
     } catch {
-      if (seq !== this.searchSeq) return;
-      this.setCandidates([]);
+      results = [];
+    }
+    if (seq !== this.searchSeq) return; // a newer search superseded this one
+    if (current) {
+      const { list, index } = preselect(results, current);
+      this.setCandidates(list, index);
+    } else {
+      this.setCandidates(results);
     }
   }
 
-  private setCandidates(list: GeoCandidate[]): void {
+  private setCandidates(list: GeoCandidate[], selected = 0): void {
     this.candidates = list;
     const results = this.resultsEl;
     const pick = this.pickBlock;
@@ -183,7 +194,7 @@ export class SettingsApp {
       opt.textContent = candidateLabel(list[i]);
       results.appendChild(opt);
     }
-    results.value = "0";
+    results.value = String(selected);
     pick.style.display = "";
     this.fitHeight();
   }
@@ -202,28 +213,16 @@ export class SettingsApp {
       const units: Units = this.unitsEl?.value === "fahrenheit" ? "fahrenheit" : "celsius";
       const idx = this.resultsEl ? parseInt(this.resultsEl.value, 10) : NaN;
       const picked = Number.isInteger(idx) ? this.candidates[idx] : undefined;
-      const writes: Array<Promise<void>> = [this.bridge.setPref(UNITS_KEY, units)];
-      if (picked) {
-        // Store the exact coordinates so the widget never re-geocodes the name.
-        writes.push(
-          this.bridge.setPref(CITY_KEY, picked.name),
-          this.bridge.setPref(LAT_KEY, String(picked.lat)),
-          this.bridge.setPref(LON_KEY, String(picked.lon)),
-        );
-      } else {
-        // No candidate (search failed / empty): fall back to the bare name and
-        // clear any stale coordinates so the widget geocodes the name itself.
-        const typed = this.cityEl?.value.trim() ?? "";
-        writes.push(
-          this.bridge.setPref(CITY_KEY, typed),
-          this.bridge.setPref(LAT_KEY, ""),
-          this.bridge.setPref(LON_KEY, ""),
-        );
-      }
-      await Promise.all(writes);
+      // A picked candidate stores its exact coordinates so the widget never
+      // re-geocodes the name. Without one (search failed or empty), the bare
+      // name goes with no coordinates and the widget geocodes it.
+      const place: Residence = picked
+        ? { city: picked.name, units, lat: picked.lat, lon: picked.lon }
+        : { city: this.cityEl?.value.trim() ?? "", units, lat: null, lon: null };
+      await this.store.save(place);
       this.bridge.toast("success", this.t("set_saved"));
-    } catch {
-      this.bridge.toast("error", this.t("set_error"));
+    } catch (err) {
+      this.bridge.toast("error", errorText(this.t("set_error"), err));
     } finally {
       this.saving = false;
       btn.disabled = false;
@@ -239,6 +238,12 @@ export class SettingsApp {
 // "Brest, Bretagne, France" - name plus whatever region/country we have.
 function candidateLabel(c: GeoCandidate): string {
   return [c.name, c.admin1, c.country].filter((v) => v && v.trim()).join(", ");
+}
+
+// "Couldn't save: <host message>" when the host said why.
+export function errorText(base: string, err: unknown): string {
+  const msg = err instanceof Error ? err.message : typeof err === "string" ? err : "";
+  return msg.trim() ? `${base}: ${msg.trim()}` : base;
 }
 
 // Minimal HTML-escape for the small set of interpolated i18n strings.

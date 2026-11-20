@@ -19,6 +19,8 @@ import { mixPalette } from "../domain/services/paletteMixer";
 import { moonPhase } from "../domain/services/moonPhase";
 import { sunModelForDay } from "../domain/services/sunModel";
 import { auroraIntensity } from "../domain/services/aurora";
+import { parseUnits, resolveLocation } from "../domain/services/location";
+import { CITY_KEY, LAT_KEY, LON_KEY, UNITS_KEY } from "../settings/ResidenceStore";
 import { translate } from "../i18n/labels";
 import { createOverlay, type OverlayHandle } from "../ui/overlay";
 
@@ -55,6 +57,8 @@ export class WeatherApp {
   private city = "";
   private units: Units = "celsius";
   private coord: GeoCoord | null = null;
+  // Whether `coord` came from stored coordinates (true) or from geocoding.
+  private coordFromStore = false;
   private snapshot: WeatherSnapshot | null = null;
   private sunTimes: SunTimes | null = null;
   private params: SceneParams = IDLE_PARAMS;
@@ -163,35 +167,33 @@ export class WeatherApp {
   }
 
   // Read the user's per-profile residence pref (city + units) over the admin
-  // default. A city change invalidates the cached geocode. Silent fallback to
-  // the current values when prefs are unavailable.
+  // default (city + coordinates + units, see resolveLocation). A change of
+  // place invalidates the cached geocode. Silent fallback to the current
+  // values when prefs are unavailable.
   private async loadResidence(): Promise<void> {
     const init = this.init;
     if (!init) return;
     try {
-      const [c, u, latS, lonS] = await Promise.all([
-        this.deps.bridge.getPref("residence.city"),
-        this.deps.bridge.getPref("residence.units"),
-        this.deps.bridge.getPref("residence.lat"),
-        this.deps.bridge.getPref("residence.lon"),
+      const [c, u, lat, lon] = await Promise.all([
+        this.deps.bridge.getPref(CITY_KEY),
+        this.deps.bridge.getPref(UNITS_KEY),
+        this.deps.bridge.getPref(LAT_KEY),
+        this.deps.bridge.getPref(LON_KEY),
       ]);
-      const nextCity = (c && c.trim()) || init.city;
-      const nextUnits: Units = u === "fahrenheit" ? "fahrenheit" : u === "celsius" ? "celsius" : init.units;
-
-      // A disambiguated pick stores exact coordinates: use them directly and
-      // never geocode the bare name (which Open-Meteo resolves by population and
-      // would land on the wrong homonym, e.g. Brest, Belarus over Brest, France).
-      const lat = latS && latS.trim() ? Number(latS) : NaN;
-      const lon = lonS && lonS.trim() ? Number(lonS) : NaN;
-      if (Number.isFinite(lat) && Number.isFinite(lon)) {
-        if (!this.coord || this.coord.lat !== lat || this.coord.lon !== lon || this.coord.name !== nextCity) {
-          this.coord = { lat, lon, name: nextCity };
+      const where = resolveLocation({ city: c, lat, lon }, init);
+      // Stored coordinates are used as they are, never the bare name (which
+      // Open-Meteo resolves by population: Brest, Belarus over Brest, France).
+      if (where.coord) {
+        const prev = this.coord;
+        if (!prev || prev.lat !== where.coord.lat || prev.lon !== where.coord.lon || prev.name !== where.coord.name) {
+          this.coord = where.coord;
         }
-      } else if (nextCity !== this.city || !this.coord) {
-        this.coord = null; // legacy name-only pref: (re-)geocode the name
+      } else if (where.city !== this.city || this.coordFromStore) {
+        this.coord = null; // name only: (re-)geocode the name
       }
-      this.city = nextCity;
-      this.units = nextUnits;
+      this.coordFromStore = where.coord !== null;
+      this.city = where.city;
+      this.units = parseUnits(u) ?? init.units;
     } catch {
       /* keep current city/units */
     }
