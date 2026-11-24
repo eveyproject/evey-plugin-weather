@@ -28,7 +28,7 @@ if [ -d node_modules ]; then
   find node_modules -depth -type d -empty -delete
 fi
 
-payload=$(ls -A | grep -vxE 'src|tests|out|scripts|\.git|\.github|\.gitignore|README\.md|package\.json|package-lock\.json|tsconfig\.json|vitest\.config\.ts|cosign\.pub' | tr '\n' ' ')
+payload=$(ls -A | grep -vxE 'src|tests|out|scripts|docs|\.git|\.github|\.gitignore|README\.md|package\.json|package-lock\.json|tsconfig\.json|vitest\.config\.ts|cosign\.pub' | tr '\n' ' ')
 
 # A metadata-only package.json: scripts and dev tooling stay out of the zip.
 pkg_tmp=$(mktemp)
